@@ -42,7 +42,9 @@ Usage
 
 1.  **Open GIMP** and load an image.
 2.  Go to **Filters > Developement > ISM Tools > AI Remove Background...**.
-3.  Click it to run the plugin.
+3.  Configure the options as per your needs:
+    -   **Model:** Choose which AI model to use for background removal.
+4.  Click **OK** to run the plugin.
 
 Example Workflow
 ----------------
