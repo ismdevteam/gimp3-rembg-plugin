@@ -30,7 +30,7 @@ Install rembg in your Python 3 environment.
 2.  **Copy the Plugin to GIMP**:
 
     -   Move the `gimp3-rembg-plugin` folder to your GIMP plugins folder:
-        -   **Linux:** `~/.config/GIMP/2.99/plug-ins`
+        -   **Linux:** `~/.config/GIMP/3.0/plug-ins`
 3.  **Restart GIMP** to load the plugin.
      ```bash
     flatpak run org.gimp.GIMP --verbose
