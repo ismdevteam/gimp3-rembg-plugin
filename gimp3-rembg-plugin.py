@@ -96,6 +96,7 @@ class Goat (Gimp.PlugIn):
             while (True):
                 response = dialog.run()
                 if response == Gtk.ResponseType.OK:
+                    rembg_session = new_session(model_selector.get_active_text())
                     dialog.destroy()
                     procedure = Gimp.get_pdb().lookup_procedure('gimp-message'); config = procedure.create_config(); config.set_property('message', 'init'); result = procedure.run(config); success = result.index(0)
                     
@@ -132,9 +133,7 @@ class Goat (Gimp.PlugIn):
                     thumb = image.duplicate()
                     thumb_layer = thumb.merge_visible_layers (Gimp.MergeType.CLIP_TO_IMAGE)
                     store_layer (thumb, thumb_layer, input_path)
-
-                    rembg_session = new_session(model_selector.get_active_text())
-                    
+                  
                     with open(input_path, 'rb') as i:
                         with open(output_path, 'wb') as o:
                             input = i.read()
@@ -159,4 +158,3 @@ class Goat (Gimp.PlugIn):
 
 
 Gimp.main(Goat.__gtype__, sys.argv)
-
