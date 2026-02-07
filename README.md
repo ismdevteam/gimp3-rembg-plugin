@@ -5,64 +5,175 @@ This GIMP plugin allows users to remove image backgrounds using AI-powered tools
 ## Features
 
 - **AI-Powered Background Removal:** Removes the background using the `rembg` tool, an AI-powered background removal library.
+- **Multiple AI Models:** Choose from various models like u2net, isnet-general-use, sam, and more.
+- **Simple Integration:** Works seamlessly within GIMP's interface.
 
 ## Requirements
 
-- **GIMP 2.99+**
-- **Python 3.x** (For `rembg` to work)
-- **rembg**: You need to have the `rembg` package installed in Python 3.x.
+- **GIMP 3.0+** (available via Flatpak or native package)
+- **Python 3.11+** (Python 3.13 recommended for compatibility with rembg)
+- **rembg 2.0+** Python library
 
+## Installation on Debian
 
-## Installation
+### For Flatpak GIMP (Recommended for GIMP 3.0+)
 
-1. **Clone or Download** this repository.
-   ```bash
-   git clone https://github.com/ismdevteam/gimp3-rembg-plugin.git
-Install rembg in your Python 3 environment.
+#### 1. Install GIMP via Flatpak (if not already installed)
+```bash
+sudo apt update
+sudo apt install flatpak
+sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+sudo apt install gnome-software-plugin-flatpak
+sudo reboot
 
-1.  **Install `rembg`** in your Python 3 environment.
+flatpak install flathub org.gimp.GIMP
 
-     ```bash 
-    flatpak run --command=bash org.gimp.GIMP --verbose
-    python3 -m ensurepip --upgrade
-    python3 -m pip install rembg[cli]
+# Verify installation
+flatpak list | grep gimp
+flatpak run org.gimp.GIMP --version
+```
 
-2.  **Copy the Plugin to GIMP**:
+#### 2. Download and Install the Plugin
+```bash
+# Create plugin directory
+mkdir -p ~/.config/GIMP/3.0/plug-ins/
+cd ~/.config/GIMP/3.0/plug-ins/
 
-    -   Move the `gimp3-rembg-plugin` folder to your GIMP plugins folder:
-        -   **Linux:** `~/.config/GIMP/3.0/plug-ins`
-3.  **Restart GIMP** to load the plugin.
-     ```bash
-    flatpak run org.gimp.GIMP --verbose
-    
+# Download and extract the plugin
+curl -L -o /tmp/gimp3-plugin.zip https://github.com/ismdevteam/gimp3-rembg-plugin/archive/refs/heads/main.zip
+unzip -q /tmp/gimp3-plugin.zip
+mv gimp3-rembg-plugin-main gimp3-rembg-plugin
+rm /tmp/gimp3-plugin.zip
 
-Usage
------
+# Make the plugin executable
+chmod +x gimp3-rembg-plugin/gimp3-rembg-plugin.py
 
-1.  **Open GIMP** and load an image.
-2.  Go to **Filters > Developement > ISM Tools > AI Remove Background...**.
-3.  Configure the options as per your needs:
-    -   **Model:** Choose which AI model to use for background removal.
-4.  Click **OK** to run the plugin.
+# Verify files
+ls -la gimp3-rembg-plugin/
+```
 
-Example Workflow
-----------------
+#### 3. Install rembg Dependencies
+```bash
+# Enter GIMP Flatpak environment
+flatpak run --command=bash org.gimp.GIMP
+python3 -m ensurepip --upgrade
 
-1.  Open an image in GIMP that you want to remove the background from.
-2.  Select **AI Remove Background** from the Filters > Developement > ISM Tools menu and click on it, or search for **plug-in-ai-remove-background** in Python-Fu menu.
-3.  Run the plugin and watch as the background is removed and the image is processed.
+# Choose ONE of the following based on your hardware:
 
-Contributing
-------------
+# Option 1: For CPU processing (works on all systems)
+python3 -m pip install "rembg[cpu]"
+
+# Option 2: For NVIDIA GPU acceleration (requires CUDA-compatible GPU)
+# python3 -m pip install "rembg[gpu]"
+
+exit
+```
+
+#### 4. Launch GIMP
+```bash
+flatpak run org.gimp.GIMP
+```
+
+### For Native GIMP (APT Installation on Debian 13+)
+
+If you have GIMP 3.0+ installed via APT (available on Debian 13+):
+
+```bash
+# Check if GIMP 3.0+ is available
+apt-cache policy gimp
+# To use gimp3-rembg-plugin, GIMP version must be > 3.0.0 in the result
+
+# Install GIMP and Python pip
+sudo apt install gimp python3-pip
+
+# Note: python3-gi, python3-gi-cairo, and gir1.2-gtk-3.0 are automatically installed as dependencies
+
+# Choose ONE of the following based on your hardware:
+
+# Option 1: For CPU processing (works on all systems)
+python3 -m pip install --user "rembg[cpu]" --break-system-packages
+
+# Option 2: For NVIDIA GPU acceleration (requires CUDA-compatible GPU)
+# python3 -m pip install --user "rembg[gpu]" --break-system-packages
+
+# Install plugin (same location as Flatpak)
+mkdir -p ~/.config/GIMP/3.0/plug-ins/
+cd ~/.config/GIMP/3.0/plug-ins/
+curl -L -o /tmp/gimp3-plugin.zip https://github.com/ismdevteam/gimp3-rembg-plugin/archive/refs/heads/main.zip
+unzip -q /tmp/gimp3-plugin.zip
+mv gimp3-rembg-plugin-main gimp3-rembg-plugin
+chmod +x gimp3-rembg-plugin/gimp3-rembg-plugin.py
+
+# Launch GIMP
+gimp
+```
+
+**Important:** On Debian 13+, you must use `--break-system-packages` flag with pip due to Python's externally-managed environment protection (PEP 668).
+
+## Usage
+
+1. **Open GIMP** and load an image.
+2. Go to **Filters → Development → ISM Tools AI Filters → AI Remove Background...**
+3. Configure the options:
+   - **Model:** Choose which AI model to use for background removal (default: u2net).
+4. Click **OK** to run the plugin.
+
+## First Run Notes
+
+On the first run with a new model:
+- The AI model files will be downloaded automatically (approximately 176MB for u2net)
+- This may take a few minutes depending on your internet connection
+- Files are saved to:
+  - Flatpak: `~/.var/app/org.gimp.GIMP/data/.u2net/`
+  - Native: `~/.u2net/`
+- Subsequent runs will be faster as models are cached locally
+
+Example download progress:
+```
+Downloading data from 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx' to file '/home/user/.var/app/org.gimp.GIMP/data/.u2net/u2net.onnx'.
+100%|████████████████████████████████| 176M/176M [00:00<00:00, 254GB/s]
+```
+
+## Available Models
+
+The plugin supports all models available in rembg 2.0+, including:
+- `u2net` (default) - General purpose model
+- `u2netp` - Lightweight version of u2net
+- `isnet-general-use` - High quality general segmentation
+- `isnet-anime` - Optimized for anime/manga images
+- `sam` - Segment Anything Model (requires specific prompts)
+- `birefnet-general` - Advanced general purpose model
+- `bria-rmbg` - State-of-the-art model by BRIA AI
+
+## Troubleshooting
+
+### Plugin doesn't appear in menu
+- Verify the plugin is in `~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/`
+- Ensure `gimp3-rembg-plugin.py` is executable (`chmod +x`)
+- Restart GIMP completely
+
+### "ModuleNotFoundError: No module named 'rembg'"
+- Ensure you installed rembg inside the Flatpak environment (Step 3 for Flatpak installation)
+- For native GIMP, ensure rembg is installed with `--break-system-packages` flag
+
+### First model download fails
+- Ensure network connectivity
+- Check disk space in your home directory
+
+### Processing is slow
+- The CPU backend is slower. If you have a compatible NVIDIA GPU, use `rembg[gpu]` instead of `rembg[cpu]`
+- Larger images take more time. Consider resizing very large images first
+
+## Contributing
 
 Feel free to open issues or submit pull requests to improve this plugin! Contributions are always welcome.
 
-License
--------
+## License
 
-This project is licensed under the **GPLv3** License - see the <LICENSE> file for details.
+This project is licensed under the **GPLv3** License - see the LICENSE file for details.
 
-Acknowledgments
----------------
--   **rembg**: This plugin integrates with [rembg](https://github.com/danielgatis/rembg) to handle AI-powered background removal.
--   **GIMP**: The GNU Image Manipulation Program, a free and open-source image editor.
+## Acknowledgments
+
+- **rembg**: This plugin integrates with [rembg](https://github.com/danielgatis/rembg) to handle AI-powered background removal.
+- **GIMP**: The GNU Image Manipulation Program, a free and open-source image editor.
+- **All AI model contributors**: For making their models available for public use.
