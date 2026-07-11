@@ -76,39 +76,69 @@ flatpak run org.gimp.GIMP
 
 ### For Native GIMP (APT Installation on Debian 13+)
 
-If you have GIMP 3.0+ installed via APT (available on Debian 13+):
+If you have GIMP 3.0+ installed via APT (available on Debian 13+), **we strongly recommend using a Python virtual environment** to install `rembg` – this avoids any risk of breaking system packages.
 
+#### 1. Install GIMP and Python tools
 ```bash
-# Check if GIMP 3.0+ is available
-apt-cache policy gimp
-# To use gimp3-rembg-plugin, GIMP version must be > 3.0.0 in the result
+sudo apt install gimp python3-pip python3-venv
+```
 
-# Install GIMP and Python pip
-sudo apt install gimp python3-pip
+#### 2. Create a dedicated virtual environment and install rembg
+```bash
+# Create the venv (choose a location, e.g. ~/.gimp3-rembg-venv)
+python3 -m venv ~/.gimp3-rembg-venv
 
-# Note: python3-gi, python3-gi-cairo, and gir1.2-gtk-3.0 are automatically installed as dependencies
+# Activate it and install rembg
+source ~/.gimp3-rembg-venv/bin/activate
 
 # Choose ONE of the following based on your hardware:
 
-# Option 1: For CPU processing (works on all systems)
-python3 -m pip install --user "rembg[cpu]" --break-system-packages
+# Option 1: CPU processing (works on all systems)
+pip install "rembg[cpu]"
 
-# Option 2: For NVIDIA GPU acceleration (requires CUDA-compatible GPU)
-# python3 -m pip install --user "rembg[gpu]" --break-system-packages
+# Option 2: NVIDIA GPU acceleration (requires CUDA-compatible GPU)
+# pip install "rembg[gpu]"
 
-# Install plugin (same location as Flatpak)
+deactivate
+```
+
+#### 3. Install the plugin and make it use the venv
+```bash
+# Create plugin directory
 mkdir -p ~/.config/GIMP/3.0/plug-ins/
 cd ~/.config/GIMP/3.0/plug-ins/
+
+# Download and extract the plugin
 curl -L -o /tmp/gimp3-plugin.zip https://github.com/ismdevteam/gimp3-rembg-plugin/archive/refs/heads/main.zip
 unzip -q /tmp/gimp3-plugin.zip
 mv gimp3-rembg-plugin-main gimp3-rembg-plugin
-chmod +x gimp3-rembg-plugin/gimp3-rembg-plugin.py
+rm /tmp/gimp3-plugin.zip
 
-# Launch GIMP
+# Make the plugin executable
+chmod +x gimp3-rembg-plugin/gimp3-rembg-plugin.py
+```
+
+**Now we need to tell the plugin where to find the installed `rembg` package.**  
+The easiest way is to add the venv’s `site-packages` directory to Python’s search path at the very beginning of the plugin script.  
+Run this command to automatically insert the correct path:
+
+```bash
+VENV_SITE=$(~/.gimp3-rembg-venv/bin/python -c "import site; print(site.getsitepackages()[0])")
+sed -i "1i import sys; sys.path.insert(0, '$VENV_SITE')" ~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/gimp3-rembg-plugin.py
+```
+
+This will prepend the venv’s package directory to `sys.path` so that GIMP’s Python interpreter can find `rembg`.
+
+#### 4. Launch GIMP
+```bash
 gimp
 ```
 
-**Important:** On Debian 13+, you must use `--break-system-packages` flag with pip due to Python's externally-managed environment protection (PEP 668).
+> **⚠️ Expert-only fallback – not recommended**  
+> If you absolutely cannot use a virtual environment and are fully aware of the risks, you can force‑install `rembg` into the system Python using `--break-system-packages`. This may break other system tools that rely on Python. **Use only in a dedicated virtual machine or test environment, and at your own risk.**
+> ```bash
+> python3 -m pip install --user "rembg[cpu]" --break-system-packages
+> ```
 
 ## Usage
 
@@ -153,8 +183,8 @@ The plugin supports all models available in rembg 2.0+, including:
 - Restart GIMP completely
 
 ### "ModuleNotFoundError: No module named 'rembg'"
-- Ensure you installed rembg inside the Flatpak environment (Step 3 for Flatpak installation)
-- For native GIMP, ensure rembg is installed with `--break-system-packages` flag
+- For Flatpak: ensure you installed rembg inside the Flatpak environment (Step 3 for Flatpak installation)
+- For native with venv: verify that the `sed` command inserted the correct path. You can manually check the plugin file – the first line should be `import sys; sys.path.insert(0, '/home/your_user/.gimp3-rembg-venv/lib/python3.x/site-packages')`
 
 ### First model download fails
 - Ensure network connectivity
