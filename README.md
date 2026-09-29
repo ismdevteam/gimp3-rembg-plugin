@@ -103,6 +103,16 @@ pip install "rembg[cpu]"
 deactivate
 ```
 
+Alternatively, if you prefer to install from the manifest bundled in this repository:
+
+```bash
+source ~/.gimp3-rembg-venv/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+See the [Using requirements.txt](#using-requirementstxt-native-gimp-only) section below for details on what is (and is not) included there.
+
 #### 3. Install the plugin and make it use the venv
 ```bash
 # Create plugin directory
@@ -140,6 +150,34 @@ gimp
 > ```bash
 > python3 -m pip install --user "rembg[cpu]" --break-system-packages
 > ```
+
+### Using requirements.txt (native GIMP only)
+
+The repository ships a minimal `requirements.txt`:
+
+```
+rembg[cpu]
+```
+
+Install it from inside your venv:
+
+```bash
+source ~/.gimp3-rembg-venv/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+**Why only `rembg[cpu]`?** The plugin only imports the Python API of `rembg`:
+
+```python
+from rembg import new_session, remove
+```
+
+It never invokes the `rembg` command‑line tool, so the `cli` extra (which pulls in `click`, `aiohttp`, `fastapi`, `uvicorn`, etc.) is not needed. Likewise, `pygobject` is **not** listed, because GIMP provides its own Python interpreter with its own `gi` bindings; installing a separate `pygobject` in a venv that is prepended to `sys.path` can shadow GIMP's `gi` and cause API mismatches. Only third‑party packages that GIMP does not ship belong in `requirements.txt`.
+
+If you want GPU acceleration, do not add `onnxruntime-gpu` to `requirements.txt` — instead, install it manually inside the venv as shown in Step 2 above. Mixing `onnxruntime` (CPU) and `onnxruntime-gpu` in the same environment is a common source of install failures.
+
+**Flatpak users:** the manifest is not used. Flatpak GIMP already has its own Python environment; follow the `python3 -m pip install "rembg[cpu]"` instructions inside `flatpak run --command=bash org.gimp.GIMP` instead.
 
 ## Usage
 
@@ -273,6 +311,9 @@ When run in batch mode, the plugin always uses the default model (`u2net`). To u
 
 ### Batcher fails with "Trying to add item ... to wrong image"
 - This error occurred in an earlier version of the plugin that used `Layer.copy()`. Update to the current version, which uses `Gimp.Layer.new_from_drawable(source_layer, image)`.
+
+### `pip install -r requirements.txt` installs a conflicting `pygobject`
+- `requirements.txt` deliberately does **not** list `pygobject`. If you see it being installed, you may have an old copy of the file. Ensure the file contains only `rembg[cpu]`.
 
 ## Contributing
 
