@@ -1,12 +1,13 @@
 # AI Remove Background GIMP3 Plugin
 
-This GIMP plugin allows users to remove image backgrounds using AI-powered tools like [rembg](https://github.com/danielgatis/rembg). The plugin integrates with GIMP3 to offer a simple way to remove backgrounds. It can process a single image in GIMP.
+This GIMP plugin allows users to remove image backgrounds using AI-powered tools like [rembg](https://github.com/danielgatis/rembg). The plugin integrates with GIMP3 to offer a simple way to remove backgrounds. It can process a single image in GIMP, either interactively or as part of an automated batch workflow (e.g. with the Batcher plugin or a Python-Fu script).
 
 ## Features
 
 - **AI-Powered Background Removal:** Removes the background using the `rembg` tool, an AI-powered background removal library.
 - **Multiple AI Models:** Choose from various models like u2net, isnet-general-use, sam, and more.
 - **Simple Integration:** Works seamlessly within GIMP's interface.
+- **Batch / Batcher Compatible:** In non-interactive mode the plugin replaces the image content in place, making it usable from GIMP's batch interpreter (`--batch-interpreter=python-fu-eval`) and from automation plugins such as Batcher.
 
 ## Requirements
 
@@ -142,11 +143,75 @@ gimp
 
 ## Usage
 
+### Interactive (GIMP UI)
+
 1. **Open GIMP** and load an image.
 2. Go to **Filters → Development → ISM Tools AI Filters → AI Remove Background...**
 3. Configure the options:
    - **Model:** Choose which AI model to use for background removal (default: u2net).
 4. Click **OK** to run the plugin.
+5. A new image window opens containing the subject on a transparent background.
+
+### Batch (Python-Fu)
+
+The plugin can be invoked non-interactively via GIMP's Python-Fu batch interpreter. In this mode it **replaces the layers of the image in place** with the background-removed result. This is the same behaviour required by automation plugins such as Batcher.
+
+The following script loads an image, removes its background, and saves the result with transparency preserved:
+
+```bash
+flatpak run org.gimp.GIMP -i --batch-interpreter=python-fu-eval -b '
+import gi
+gi.require_version("Gimp", "3.0")
+from gi.repository import Gimp, Gio
+
+pdb = Gimp.get_pdb()
+
+# Load the input image
+proc = pdb.lookup_procedure("gimp-file-load")
+cfg = proc.create_config()
+cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+cfg.set_property("file", Gio.File.new_for_path("/path/to/input.png"))
+image = proc.run(cfg).index(1)
+
+# Run the plugin
+drawables = image.get_selected_drawables()
+proc = pdb.lookup_procedure("plug-in-ai-remove-background")
+cfg = proc.create_config()
+cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+cfg.set_property("image", image)
+cfg.set_core_object_array("drawables", drawables)
+proc.run(cfg)
+
+# Export the result.  NOTE: do NOT call image.flatten() before exporting —
+# the plugin already produced a single layer with an alpha channel, and
+# flatten() would composite it onto the background colour and lose
+# transparency.
+proc = pdb.lookup_procedure("file-png-export")
+cfg = proc.create_config()
+cfg.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+cfg.set_property("image", image)
+cfg.set_property("file", Gio.File.new_for_path("/path/to/output.png"))
+proc.run(cfg)
+
+# Quit
+proc = pdb.lookup_procedure("gimp-quit")
+cfg = proc.create_config()
+proc.run(cfg)
+'
+```
+
+**Important:** do **not** call `image.flatten()` after the plugin in batch mode. Use `image.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)` if you need to collapse layers while preserving alpha, or simply export the image directly.
+
+### Batch (Batcher plugin)
+
+To use this plugin with [Batcher](https://github.com/kamilburda/gimp-batcher):
+
+1. Open GIMP interactively.
+2. Add an **AI Remove Background** step to your Batcher workflow.
+3. Make sure the step **after** the AI step does not force a flatten (which would composite the transparent pixels onto a solid background). Prefer "Merge visible layers" or export directly.
+4. Run the workflow.
+
+Because the plugin replaces the layers in place and returns success without declaring an image return value, Batcher can continue the workflow without any `NULL` errors.
 
 ## First Run Notes
 
@@ -175,10 +240,13 @@ The plugin supports all models available in rembg 2.0+, including:
 - `birefnet-general` - Advanced general purpose model
 - `bria-rmbg` - State-of-the-art model by BRIA AI
 
+When run in batch mode, the plugin always uses the default model (`u2net`). To use a different model in batch mode, either invoke the plugin via Python-Fu with the model set on its config, or use Batcher's model-selection field if it supports one.
+
 ## Troubleshooting
 
 ### Plugin doesn't appear in menu
 - Verify the plugin is in `~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/`
+  - **For Flatpak GIMP:** the plugin directory is `~/.var/app/org.gimp.GIMP/config/GIMP/3.0/plug-ins/`
 - Ensure `gimp3-rembg-plugin.py` is executable (`chmod +x`)
 - Restart GIMP completely
 
@@ -193,6 +261,18 @@ The plugin supports all models available in rembg 2.0+, including:
 ### Processing is slow
 - The CPU backend is slower. If you have a compatible NVIDIA GPU, use `rembg[gpu]` instead of `rembg[cpu]`
 - Larger images take more time. Consider resizing very large images first
+
+### Batch command fails with "PDB procedure returned NULL GIMP object"
+- This is an old error from before the plugin supported batch mode. Update to the current version, which handles `RUN-NONINTERACTIVE` and does not return an image.
+
+### Batch command fails with "does not have property 'run-mode'"
+- Some procedures (e.g. `gimp-quit`) do not expose a `run-mode` property. Simply omit that line from your script.
+
+### Batch command produces a white background instead of transparency
+- Remove any `image.flatten()` call before exporting. `flatten()` composites the layer onto the current background colour and discards alpha. Export the image directly, or use `image.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)` instead.
+
+### Batcher fails with "Trying to add item ... to wrong image"
+- This error occurred in an earlier version of the plugin that used `Layer.copy()`. Update to the current version, which uses `Gimp.Layer.new_from_drawable(source_layer, image)`.
 
 ## Contributing
 
