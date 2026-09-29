@@ -77,43 +77,16 @@ flatpak run org.gimp.GIMP
 
 ### For Native GIMP (APT Installation on Debian 13+)
 
-If you have GIMP 3.0+ installed via APT (available on Debian 13+), **we strongly recommend using a Python virtual environment** to install `rembg` – this avoids any risk of breaking system packages.
+On Debian 13 (trixie) with GIMP 3.0.4 from APT, the tested working approach uses a Python **virtual environment** that supplies both the plugin's GIMP bindings (`pygobject`) and `rembg`. **GIMP must be launched from within the activated venv** so its Python subprocess inherits the venv's `sys.path`.
+
+> ⚠️ **Download the plugin first.** The `requirements.txt` file lives inside the plugin folder, so it must exist before you run `pip install -r requirements.txt`.
 
 #### 1. Install GIMP and Python tools
 ```bash
 sudo apt install gimp python3-pip python3-venv
 ```
 
-#### 2. Create a dedicated virtual environment and install rembg
-```bash
-# Create the venv (choose a location, e.g. ~/.gimp3-rembg-venv)
-python3 -m venv ~/.gimp3-rembg-venv
-
-# Activate it and install rembg
-source ~/.gimp3-rembg-venv/bin/activate
-
-# Choose ONE of the following based on your hardware:
-
-# Option 1: CPU processing (works on all systems)
-pip install "rembg[cpu]"
-
-# Option 2: NVIDIA GPU acceleration (requires CUDA-compatible GPU)
-# pip install "rembg[gpu]"
-
-deactivate
-```
-
-Alternatively, if you prefer to install from the manifest bundled in this repository:
-
-```bash
-source ~/.gimp3-rembg-venv/bin/activate
-pip install -r requirements.txt
-deactivate
-```
-
-See the [Using requirements.txt](#using-requirementstxt-native-gimp-only) section below for details on what is (and is not) included there.
-
-#### 3. Install the plugin and make it use the venv
+#### 2. Download the plugin
 ```bash
 # Create plugin directory
 mkdir -p ~/.config/GIMP/3.0/plug-ins/
@@ -127,63 +100,96 @@ rm /tmp/gimp3-plugin.zip
 
 # Make the plugin executable
 chmod +x gimp3-rembg-plugin/gimp3-rembg-plugin.py
+
+# Verify files (you should see gimp3-rembg-plugin.py, ui.glade, README.md, requirements.txt)
+ls -la gimp3-rembg-plugin/
 ```
 
-**Now we need to tell the plugin where to find the installed `rembg` package.**  
-The easiest way is to add the venv’s `site-packages` directory to Python’s search path at the very beginning of the plugin script.  
-Run this command to automatically insert the correct path:
-
+#### 3. Create the venv and install dependencies
 ```bash
-VENV_SITE=$(~/.gimp3-rembg-venv/bin/python -c "import site; print(site.getsitepackages()[0])")
-sed -i "1i import sys; sys.path.insert(0, '$VENV_SITE')" ~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/gimp3-rembg-plugin.py
+# Create a dedicated venv
+python3 -m venv ~/.gimp3-rembg-venv
+
+# Activate it
+source ~/.gimp3-rembg-venv/bin/activate
+
+# Install from the manifest shipped with the plugin
+cd ~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/
+pip install -r requirements.txt
+
+# (Optional, GPU only) Replace CPU onnxruntime with the GPU build:
+# pip uninstall -y onnxruntime
+# pip install onnxruntime-gpu
+
+deactivate
 ```
 
-This will prepend the venv’s package directory to `sys.path` so that GIMP’s Python interpreter can find `rembg`.
+The manifest installs three things:
 
-#### 4. Launch GIMP
+- `pygobject` — the GObject bindings the plugin uses (`import gi`)
+- `rembg[cli,cpu]` — the AI background-removal library and its CPU inference backend
+- `onnxruntime` — the inference runtime (already pulled in by `rembg[cpu]`, listed explicitly for clarity)
+
+#### 4. Launch GIMP from the activated venv
+
 ```bash
+source ~/.gimp3-rembg-venv/bin/activate
 gimp
 ```
 
-> **⚠️ Expert-only fallback – not recommended**  
-> If you absolutely cannot use a virtual environment and are fully aware of the risks, you can force‑install `rembg` into the system Python using `--break-system-packages`. This may break other system tools that rely on Python. **Use only in a dedicated virtual machine or test environment, and at your own risk.**
-> ```bash
-> python3 -m pip install --user "rembg[cpu]" --break-system-packages
-> ```
+When GIMP is started from the activated venv, its Python subprocess inherits the venv's `sys.path`, so `import gi` and `import rembg` both resolve to the venv. The plugin then loads without further configuration.
 
-### Using requirements.txt (native GIMP only)
-
-The repository ships a minimal `requirements.txt`:
-
-```
-rembg[cpu]
-```
-
-Install it from inside your venv:
+To avoid typing the activation command every time, add an alias to `~/.bashrc`:
 
 ```bash
+alias gimp-rembg='source ~/.gimp3-rembg-venv/bin/activate && gimp'
+```
+
+Then run `gimp-rembg` instead of `gimp` whenever you want to use the plugin.
+
+> **⚠️ Expert-only fallback – not recommended**  
+> If you absolutely cannot use a venv and are fully aware of the risks, you can install just the runtime library into the user site:
+> ```bash
+> pip install --user --break-system-packages "rembg[cpu]"
+> ```
+> **Do not install `pygobject` this way.** `--break-system-packages` combined with `pygobject` can overwrite or shadow the system `pygobject` that many GTK applications depend on. **Never** run `pip install --user --break-system-packages -r requirements.txt` from this repository — the manifest is intended for a venv only. The runtime library alone is enough because the system Python already provides `gi`.
+
+## Using requirements.txt
+
+The repository ships a `requirements.txt`:
+
+```
+pygobject
+rembg[cli,cpu]
+onnxruntime
+```
+
+Install it from inside the venv, **after** downloading the plugin:
+
+```bash
+cd ~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin
 source ~/.gimp3-rembg-venv/bin/activate
 pip install -r requirements.txt
 deactivate
 ```
 
-**Why only `rembg[cpu]`?** The plugin only imports the Python API of `rembg`:
+**Why these three?**
 
-```python
-from rembg import new_session, remove
-```
+- `pygobject` is required so the plugin's `import gi` succeeds when GIMP is launched from a venv.
+- `rembg[cli,cpu]` provides the `rembg` Python API and CPU inference. The `cli` extra is technically not used by the plugin, but it makes the venv self-contained and mirrors a known-good configuration. If you prefer a leaner install, replace this line with `rembg[cpu]`.
+- `onnxruntime` is already pulled in by `rembg[cpu]`; listing it explicitly is optional but harmless.
 
-It never invokes the `rembg` command‑line tool, so the `cli` extra (which pulls in `click`, `aiohttp`, `fastapi`, `uvicorn`, etc.) is not needed. Likewise, `pygobject` is **not** listed, because GIMP provides its own Python interpreter with its own `gi` bindings; installing a separate `pygobject` in a venv that is prepended to `sys.path` can shadow GIMP's `gi` and cause API mismatches. Only third‑party packages that GIMP does not ship belong in `requirements.txt`.
+**Do not add `onnxruntime-gpu` to this file.** It conflicts with `onnxruntime` and is a ~250 MB download that only helps if you have a CUDA-capable GPU. Install it manually as shown in Step 3.
 
-If you want GPU acceleration, do not add `onnxruntime-gpu` to `requirements.txt` — instead, install it manually inside the venv as shown in Step 2 above. Mixing `onnxruntime` (CPU) and `onnxruntime-gpu` in the same environment is a common source of install failures.
+**Do not use this file with `--break-system-packages`.** The `pygobject` line is safe inside a venv but dangerous against the system Python. For the expert fallback, install `rembg[cpu]` directly and skip the manifest.
 
-**Flatpak users:** the manifest is not used. Flatpak GIMP already has its own Python environment; follow the `python3 -m pip install "rembg[cpu]"` instructions inside `flatpak run --command=bash org.gimp.GIMP` instead.
+**Flatpak users:** the manifest is not used. Flatpak GIMP has its own Python environment; follow the `python3 -m pip install "rembg[cpu]"` instructions inside `flatpak run --command=bash org.gimp.GIMP` instead.
 
 ## Usage
 
 ### Interactive (GIMP UI)
 
-1. **Open GIMP** and load an image.
+1. **Open GIMP** (with the venv activated, or via the alias described above) and load an image.
 2. Go to **Filters → Development → ISM Tools AI Filters → AI Remove Background...**
 3. Configure the options:
    - **Model:** Choose which AI model to use for background removal (default: u2net).
@@ -197,7 +203,7 @@ The plugin can be invoked non-interactively via GIMP's Python-Fu batch interpret
 The following script loads an image, removes its background, and saves the result with transparency preserved:
 
 ```bash
-flatpak run org.gimp.GIMP -i --batch-interpreter=python-fu-eval -b '
+gimp -i --batch-interpreter=python-fu-eval -b '
 import gi
 gi.require_version("Gimp", "3.0")
 from gi.repository import Gimp, Gio
@@ -238,13 +244,16 @@ proc.run(cfg)
 '
 ```
 
+For Flatpak GIMP, prefix the command with `flatpak run org.gimp.GIMP`.  
+For native GIMP with a venv, use `source ~/.gimp3-rembg-venv/bin/activate && gimp` or use the `gimp-rembg` alias.
+
 **Important:** do **not** call `image.flatten()` after the plugin in batch mode. Use `image.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)` if you need to collapse layers while preserving alpha, or simply export the image directly.
 
 ### Batch (Batcher plugin)
 
 To use this plugin with [Batcher](https://github.com/kamilburda/gimp-batcher):
 
-1. Open GIMP interactively.
+1. Open GIMP from the activated venv (or via the `gimp-rembg` alias).
 2. Add an **AI Remove Background** step to your Batcher workflow.
 3. Make sure the step **after** the AI step does not force a flatten (which would composite the transparent pixels onto a solid background). Prefer "Merge visible layers" or export directly.
 4. Run the workflow.
@@ -254,17 +263,17 @@ Because the plugin replaces the layers in place and returns success without decl
 ## First Run Notes
 
 On the first run with a new model:
-- The AI model files will be downloaded automatically (approximately 176MB for u2net)
+- The AI model files are downloaded automatically (~176 MB for `u2net`)
 - This may take a few minutes depending on your internet connection
-- Files are saved to:
-  - Flatpak: `~/.var/app/org.gimp.GIMP/data/.u2net/`
-  - Native: `~/.u2net/`
-- Subsequent runs will be faster as models are cached locally
+- Files are saved to rembg's cache directory. On rembg 2.0.85 the path is:
+  - Native: `~/.rembg/models/<model_name>/<model_name>.onnx`
+  - Flatpak: `~/.var/app/org.gimp.GIMP/data/.rembg/models/...` (or the equivalent inside the sandbox)
+- Subsequent runs are much faster as the model is cached locally
 
-Example download progress:
+Example download progress (rembg 2.0.85 on native Debian):
 ```
-Downloading data from 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx' to file '/home/user/.var/app/org.gimp.GIMP/data/.u2net/u2net.onnx'.
-100%|████████████████████████████████| 176M/176M [00:00<00:00, 254GB/s]
+Downloading data from 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx' to file '/home/user/.rembg/models/u2net/u2net.onnx'.
+100%|████████████████████████████████████████| 176M/176M [00:15<00:00, 956GB/s]
 ```
 
 ## Available Models
@@ -288,17 +297,32 @@ When run in batch mode, the plugin always uses the default model (`u2net`). To u
 - Ensure `gimp3-rembg-plugin.py` is executable (`chmod +x`)
 - Restart GIMP completely
 
-### "ModuleNotFoundError: No module named 'rembg'"
-- For Flatpak: ensure you installed rembg inside the Flatpak environment (Step 3 for Flatpak installation)
-- For native with venv: verify that the `sed` command inserted the correct path. You can manually check the plugin file – the first line should be `import sys; sys.path.insert(0, '/home/your_user/.gimp3-rembg-venv/lib/python3.x/site-packages')`
+### `ModuleNotFoundError: No module named 'rembg'`
+- **venv (native install):** GIMP was not launched from the activated venv. Activate the venv first (`source ~/.gimp3-rembg-venv/bin/activate`) and then run `gimp`. Or use the `gimp-rembg` alias described in Step 4.
+- **Flatpak:** ensure you installed rembg inside the Flatpak environment.
+
+### `ModuleNotFoundError: No module named 'gi'`
+- GIMP was launched from the system shell, not from the activated venv, so the plugin's `import gi` could not find the venv's `pygobject`.
+- Activate the venv (`source ~/.gimp3-rembg-venv/bin/activate`) and run `gimp` from there.
+- Verify the venv has `pygobject` installed: `source ~/.gimp3-rembg-venv/bin/activate && pip list | grep -i pygobject`.
+
+### `Failed to execute child process ... (Exec format error)`
+- A non-shebang line ended up **before** `#!/usr/bin/env python3`. Restore the shebang as the first line.
+
+### `pip install -r requirements.txt` says "No such file or directory"
+- Make sure you unzipped the plugin into `~/.config/GIMP/3.0/plug-ins/gimp3-rembg-plugin/` and are running `pip install` from inside that directory.
+
+### dependency conflicts with other user-installed packages
+- The venv approach isolates the plugin from your other Python packages, so this problem should not arise.
+- If you used the expert-only fallback with `--break-system-packages`, you may see conflicts (for example `electrum` complaining about `protobuf`). Prefer the venv. **Never** install `pygobject` with `--break-system-packages`.
 
 ### First model download fails
 - Ensure network connectivity
 - Check disk space in your home directory
 
 ### Processing is slow
-- The CPU backend is slower. If you have a compatible NVIDIA GPU, use `rembg[gpu]` instead of `rembg[cpu]`
-- Larger images take more time. Consider resizing very large images first
+- The CPU backend is slower. If you have a compatible NVIDIA GPU, install `onnxruntime-gpu` into the venv (see Step 3) and remove `onnxruntime`.
+- Larger images take more time. Consider resizing very large images first.
 
 ### Batch command fails with "PDB procedure returned NULL GIMP object"
 - This is an old error from before the plugin supported batch mode. Update to the current version, which handles `RUN-NONINTERACTIVE` and does not return an image.
@@ -311,9 +335,6 @@ When run in batch mode, the plugin always uses the default model (`u2net`). To u
 
 ### Batcher fails with "Trying to add item ... to wrong image"
 - This error occurred in an earlier version of the plugin that used `Layer.copy()`. Update to the current version, which uses `Gimp.Layer.new_from_drawable(source_layer, image)`.
-
-### `pip install -r requirements.txt` installs a conflicting `pygobject`
-- `requirements.txt` deliberately does **not** list `pygobject`. If you see it being installed, you may have an old copy of the file. Ensure the file contains only `rembg[cpu]`.
 
 ## Contributing
 

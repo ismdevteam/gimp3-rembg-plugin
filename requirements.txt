@@ -1,1 +1,3 @@
-rembg[cpu]
+pygobject
+rembg[cli,cpu]
+onnxruntime
